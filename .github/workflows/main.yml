@@ -148,16 +148,11 @@ jobs:
 
           patched = re.sub(pattern, replacement, code)
 
-          # Force the wheel platform tag to be android_24_arm64_v8a instead of manylinux/host platform
-          plat_pattern = r\"class BuildPy\(build_py\):\"
-          plat_replacement = \"\"\"class BuildPy(build_py):
-            def run(self):
-              # Inject Android GPU configuration before building
-              import os
-              os.environ['MEDIAPIPE_DISABLE_GPU'] = '0'
-              super().run()\"\"\"
-
-          patched = patched.replace('class BuildPy(build_py):', plat_replacement)
+          # Force MP_DISABLE_GPU to be False so GPU is enabled at import-time
+          patched = patched.replace(
+              \"MP_DISABLE_GPU = os.environ.get('MEDIAPIPE_DISABLE_GPU') != '0'\",
+              \"MP_DISABLE_GPU = False\"
+          )
 
           # Resolve PEP 440 InvalidVersion: 'dev' error using the dynamic git_ref
           git_ref = os.environ.get('GIT_REF', 'master')
@@ -201,6 +196,28 @@ jobs:
           print('Successfully patched mediapipe/python/BUILD for Android OpenCV linkage.')
           "
 
+      # Step 8.7: Patch WORKSPACE to support Python 3.13 and 3.14
+      - name: Patch WORKSPACE for Python 3.13 and 3.14
+        run: |
+          python3 -c "
+          import re
+
+          with open('WORKSPACE', 'r') as f:
+              content = f.read()
+
+          pattern = r'(\"3\.12\":\s*\"//:requirements_lock_3_12\.txt\",?)'
+          replacement = r'\1\n        \"3.13\": \"//:requirements_lock_3_12.txt\",\n        \"3.14\": \"//:requirements_lock_3_12.txt\",'
+
+          content, count = re.subn(pattern, replacement, content)
+          if count > 0:
+              print(f'Successfully patched WORKSPACE requirements for Python 3.13 and 3.14 ({count} occurrences).')
+          else:
+              print('Warning: Requirements lock pattern not found in WORKSPACE!')
+
+          with open('WORKSPACE', 'w') as f:
+              f.write(content)
+          "
+
       # Step 9: Configure WORKSPACE to link against Android NDK and SDK
       - name: Configure Android SDK and NDK in WORKSPACE
         run: |
@@ -229,6 +246,7 @@ jobs:
           python3 setup.py bdist_wheel --plat-name=android_24_arm64_v8a
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          MEDIAPIPE_DISABLE_GPU: '0'
 
       # Step 11: Collect and upload the built wheel
       - name: Upload MediaPipe Android Wheel as Artifact
