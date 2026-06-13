@@ -132,9 +132,11 @@ jobs:
 
       # Step 8: Patch setup.py to support Android cross-compilation
       - name: Patch MediaPipe setup.py for Android Wheels
+        env:
+          GIT_REF: ${{ needs.setup.outputs.git-ref }}
         run: |
           python3 -c "
-          import re
+          import re, os
 
           with open('setup.py', 'r') as f:
               code = f.read()
@@ -157,10 +159,18 @@ jobs:
 
           patched = patched.replace('class BuildPy(build_py):', plat_replacement)
 
+          # Resolve PEP 440 InvalidVersion: 'dev' error using the dynamic git_ref
+          git_ref = os.environ.get('GIT_REF', 'master')
+          version = git_ref.lstrip('v')
+          if not any(char.isdigit() for char in version):
+              version = '0.0.0.dev0'
+
+          patched = patched.replace(\"__version__ = 'dev'\", f\"__version__ = '{version}'\")
+
           with open('setup.py', 'w') as f:
               f.write(patched)
 
-          print('Successfully patched setup.py for Android arm64 cross-compilation.')
+          print(f'Successfully patched setup.py for Android arm64 cross-compilation and resolved versioning issue with version: {version}')
           "
 
       # Step 9: Configure WORKSPACE to link against Android NDK and SDK
