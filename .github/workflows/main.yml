@@ -196,6 +196,46 @@ jobs:
           print('Successfully patched mediapipe/python/BUILD for Android OpenCV linkage.')
           "
 
+      # Step 8.6: Patch MediaPipe to bypass GenAI/odml dependency
+      - name: Patch MediaPipe to bypass GenAI/odml dependency
+        run: |
+          python3 -c "
+          import os, shutil
+
+          # Remove tasks/c/genai directory if it exists to prevent package analysis errors
+          if os.path.exists('mediapipe/tasks/c/genai'):
+              shutil.rmtree('mediapipe/tasks/c/genai')
+              print('Successfully removed mediapipe/tasks/c/genai directory.')
+
+          # Remove model_ckpt_util from Python package dependencies
+          if os.path.exists('mediapipe/python/BUILD'):
+              with open('mediapipe/python/BUILD', 'r') as f:
+                  content = f.read()
+              content = content.replace('\"//mediapipe/python/pybind:model_ckpt_util\",', '# \"//mediapipe/python/pybind:model_ckpt_util\",')
+              with open('mediapipe/python/BUILD', 'w') as f:
+                  f.write(content)
+              print('Successfully patched mediapipe/python/BUILD to remove model_ckpt_util.')
+
+          # Comment out model_ckpt_util inclusion in framework_bindings.cc
+          if os.path.exists('mediapipe/python/framework_bindings.cc'):
+              with open('mediapipe/python/framework_bindings.cc', 'r') as f:
+                  content = f.read()
+              content = content.replace('#include \"mediapipe/python/pybind/model_ckpt_util.h\"', '// #include \"mediapipe/python/pybind/model_ckpt_util.h\"')
+              content = content.replace('ModelCkptUtilModule(&m);', '// ModelCkptUtilModule(&m);')
+              with open('mediapipe/python/framework_bindings.cc', 'w') as f:
+                  f.write(content)
+              print('Successfully patched mediapipe/python/framework_bindings.cc.')
+
+          # Comment out model_ckpt_util import in __init__.py
+          if os.path.exists('mediapipe/python/__init__.py'):
+              with open('mediapipe/python/__init__.py', 'r') as f:
+                  content = f.read()
+              content = content.replace('from mediapipe.python._framework_bindings import model_ckpt_util', '# from mediapipe.python._framework_bindings import model_ckpt_util')
+              with open('mediapipe/python/__init__.py', 'w') as f:
+                  f.write(content)
+              print('Successfully patched mediapipe/python/__init__.py.')
+          "
+
       # Step 8.7: Patch WORKSPACE to support Python 3.13 and 3.14
       - name: Patch WORKSPACE for Python 3.13 and 3.14
         run: |
