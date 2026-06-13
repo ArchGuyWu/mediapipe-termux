@@ -162,6 +162,12 @@ jobs:
 
           patched = patched.replace(\"__version__ = 'dev'\", f\"__version__ = '{version}'\")
 
+          # Prevent forcing OPENCV=source when building for Android
+          patched = patched.replace(
+              \"if not self.link_opencv and not IS_WINDOWS:\",
+              \"if not self.link_opencv and not IS_WINDOWS and not any('android' in arg for arg in bazel_command):\"
+          )
+
           with open('setup.py', 'w') as f:
               f.write(patched)
 
