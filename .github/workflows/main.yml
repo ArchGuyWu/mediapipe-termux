@@ -105,7 +105,7 @@ jobs:
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r25c
+          ndk-version: r28b
           add-to-path: false
 
       # Step 4: Setup Bazel using setup-bazel action (which respects .bazelversion)
