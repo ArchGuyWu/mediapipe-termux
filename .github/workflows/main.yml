@@ -1,0 +1,208 @@
+# Copyright 2026 The ODML Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Build MediaPipe Android AArch64 Python Wheels
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: 'Google MediaPipe official repository tag/branch/commit to build (e.g., master, v0.10.14)'
+        required: true
+        default: 'master'
+        type: string
+      python_versions:
+        description: 'Python version(s) to build (e.g., 3.10,3.11,3.12,3.13,3.14)'
+        required: true
+        default: '3.13,3.14'
+        type: string
+      publish_to_pypi:
+        description: 'Publish wheels to PyPI'
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  setup:
+    name: Setup Build Matrix & Ref
+    runs-on: ubuntu-latest
+    outputs:
+      python-matrix: ${{ steps.set-matrix.outputs.python-matrix }}
+      git-ref: ${{ steps.set-ref.outputs.git-ref }}
+    steps:
+      - id: set-matrix
+        run: |
+          # Default python versions for automatic triggers
+          INPUT_VERSIONS="3.13,3.14"
+
+          # Override if manually triggered
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "${{ github.event.inputs.python_versions }}" ]; then
+              INPUT_VERSIONS="${{ github.event.inputs.python_versions }}"
+            fi
+          fi
+
+          # Convert comma-separated string to JSON array dynamically using jq
+          JSON_ARRAY=$(echo "$INPUT_VERSIONS" | jq -c -R 'split(",")')
+          echo "python-matrix=${JSON_ARRAY}" >> $GITHUB_OUTPUT
+
+      - id: set-ref
+        run: |
+          GIT_REF="master"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "${{ github.event.inputs.git_ref }}" ]; then
+              GIT_REF="${{ github.event.inputs.git_ref }}"
+            fi
+          fi
+          echo "git-ref=${GIT_REF}" >> $GITHUB_OUTPUT
+
+  build-mediapipe-wheels:
+    name: "Build MediaPipe Android Wheel - Py ${{ matrix.python-version }}"
+    needs: setup
+    runs-on: ubuntu-latest
+    env:
+      PUBLISH_TO_PYPI: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_pypi == 'true') && 'true' || 'false' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJson(needs.setup.outputs.python-version-matrix || needs.setup.outputs.python-matrix) }}
+
+    steps:
+      # Step 1: Checkout the official Google MediaPipe repository
+      - name: Checkout Google MediaPipe Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'google/mediapipe'
+          ref: ${{ needs.setup.outputs.git-ref }}
+          lfs: true
+          submodules: recursive
+
+      # Step 2: Setup Java JDK (Bazel requires Java to run)
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # Step 3: Setup Android NDK (r25c or similar is standard for MediaPipe stable versions)
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r25c
+          add-to-path: false
+
+      # Step 4: Setup Bazel using setup-bazel action (which respects .bazelversion)
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          disk-cache: true
+          repository-cache: true
+
+      # Step 5: Install uv package manager
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      # Step 6: Setup Python matching the matrix version
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Step 7: Install Python packages required for building wheels
+      - name: Install Build Dependencies
+        run: |
+          uv pip install --system wheel setuptools numpy protobuf
+
+      # Step 8: Patch setup.py to support Android cross-compilation
+      - name: Patch MediaPipe setup.py for Android Wheels
+        run: |
+          python3 -c "
+          import re
+
+          with open('setup.py', 'r') as f:
+              code = f.read()
+
+          # Replace default bazel build flags in setup.py to cross-compile for Android arm64
+          # Specifically targeting: --config=android_arm64 and disabling desktop GPU/GUI
+          pattern = r\"'bazel',\s*'build',\s*'-c',\s*'opt'\"
+          replacement = \"'bazel', 'build', '-c', 'opt', '--config=android_arm64', '--cpu=arm64-v8a', '--copt=-D__ANDROID_API__=24', '--linkopt=-landroid', '--linkopt=-llog'\"
+
+          patched = re.sub(pattern, replacement, code)
+
+          # Force the wheel platform tag to be android_24_arm64_v8a instead of manylinux/host platform
+          plat_pattern = r\"class BuildPy\(build_py\):\"
+          plat_replacement = \"\"\"class BuildPy(build_py):
+            def run(self):
+              # Inject Android CPU configuration before building
+              import os
+              os.environ['MEDIAPIPE_DISABLE_GPU'] = '1'
+              super().run()\"\"\"
+
+          patched = patched.replace('class BuildPy(build_py):', plat_replacement)
+
+          with open('setup.py', 'w') as f:
+              f.write(patched)
+
+          print('Successfully patched setup.py for Android arm64 cross-compilation.')
+          "
+
+      # Step 9: Configure WORKSPACE to link against Android NDK and SDK
+      - name: Configure Android SDK and NDK in WORKSPACE
+        run: |
+          # Append android_ndk_repository and android_sdk_repository if they are not active in WORKSPACE
+          # This tells Bazel where to find the compilers and target headers
+          cat << 'EOF' >> WORKSPACE
+
+          # Android configuration injected by GHA builder
+          android_ndk_repository(
+              name = "androidndk",
+              path = \"${{ steps.setup-ndk.outputs.ndk-path }}\",
+              api_level = 24,
+          )
+
+          android_sdk_repository(
+              name = "androidsdk",
+              api_level = 30,
+              build_tools_version = \"30.0.3\",
+          )
+          EOF
+
+      # Step 10: Run setup.py bdist_wheel with custom android platform tag
+      - name: Build MediaPipe Android Wheel
+        run: |
+          # Build the wheel targeting android_24_arm64_v8a platform
+          python3 setup.py bdist_wheel --plat-name=android_24_arm64_v8a
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      # Step 11: Collect and upload the built wheel
+      - name: Upload MediaPipe Android Wheel as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediapipe-wheel-android-aarch64-py${{ matrix.python-version }}
+          path: dist/*.whl
+
+      # Step 12: Optional PyPI Publish
+      - name: Publish to PyPI
+        if: env.PUBLISH_TO_PYPI == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_UPLOAD_TOKEN }}
+        run: |
+          find dist -name "*.whl" -exec uv publish {} \;
