@@ -143,8 +143,8 @@ jobs:
 
           # Replace default bazel build flags in setup.py to cross-compile for Android arm64
           # Specifically targeting: --config=android_arm64
-          pattern = r\"'bazel',\s*'build',\s*'-c',\s*'opt'\"
-          replacement = \"'bazel', 'build', '-c', 'opt', '--config=android_arm64'\"
+          pattern = r\"'bazel',\s*'build',\s*'--compilation_mode=opt'\"
+          replacement = \"'bazel', 'build', '--compilation_mode=opt', '--config=android_arm64'\"
 
           patched = re.sub(pattern, replacement, code)
 
