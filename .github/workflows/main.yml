@@ -207,6 +207,15 @@ jobs:
               shutil.rmtree('mediapipe/tasks/c/genai')
               print('Successfully removed mediapipe/tasks/c/genai directory.')
 
+          # Remove GenAI dependencies from mediapipe/tasks/c/BUILD to avoid missing package errors
+          if os.path.exists('mediapipe/tasks/c/BUILD'):
+              with open('mediapipe/tasks/c/BUILD', 'r') as f:
+                  lines = f.readlines()
+              new_lines = [line for line in lines if 'genai' not in line.lower()]
+              with open('mediapipe/tasks/c/BUILD', 'w') as f:
+                  f.writelines(new_lines)
+              print('Successfully patched mediapipe/tasks/c/BUILD to remove GenAI dependencies.')
+
           # Remove model_ckpt_util from Python package dependencies
           if os.path.exists('mediapipe/python/BUILD'):
               with open('mediapipe/python/BUILD', 'r') as f:
