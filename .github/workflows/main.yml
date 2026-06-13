@@ -142,9 +142,9 @@ jobs:
               code = f.read()
 
           # Replace default bazel build flags in setup.py to cross-compile for Android arm64
-          # Specifically targeting: --config=android_arm64 and enabling GPU support
+          # Specifically targeting: --config=android_arm64
           pattern = r\"'bazel',\s*'build',\s*'-c',\s*'opt'\"
-          replacement = \"'bazel', 'build', '-c', 'opt', '--config=android_arm64', '--cpu=arm64-v8a', '--copt=-D__ANDROID_API__=24', '--linkopt=-landroid', '--linkopt=-llog', '--linkopt=-lEGL', '--linkopt=-lGLESv2', '--linkopt=-lGLESv3', '--linkopt=-lvulkan'\"
+          replacement = \"'bazel', 'build', '-c', 'opt', '--config=android_arm64'\"
 
           patched = re.sub(pattern, replacement, code)
 
@@ -310,6 +310,19 @@ jobs:
               api_level = 34,
               build_tools_version = "34.0.0",
           )
+          EOF
+
+      # Step 9.5: Configure .bazelrc for Android GPU and Vulkan
+      - name: Configure .bazelrc for Android GPU and Vulkan
+        run: |
+          cat << 'EOF' >> .bazelrc
+
+          # Custom Android target-specific configuration injected by GHA builder
+          build:android_arm64 --copt=-D__ANDROID_API__=24
+          build:android_arm64 --linkopt=-lEGL
+          build:android_arm64 --linkopt=-lGLESv2
+          build:android_arm64 --linkopt=-lGLESv3
+          build:android_arm64 --linkopt=-lvulkan
           EOF
 
       # Step 10: Run setup.py bdist_wheel with custom android platform tag
