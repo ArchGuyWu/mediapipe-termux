@@ -310,6 +310,17 @@ jobs:
               api_level = 34,
               build_tools_version = "34.0.0",
           )
+
+          # Bind Android crosstool and register toolchains
+          bind(
+              name = "android/crosstool",
+              actual = "@androidndk//:toolchain",
+          )
+
+          register_toolchains(
+              "@androidsdk//:all",
+              "@androidndk//:all",
+          )
           EOF
 
       # Step 9.5: Configure .bazelrc for Android GPU and Vulkan
