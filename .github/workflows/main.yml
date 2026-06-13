@@ -200,13 +200,37 @@ jobs:
       - name: Patch WORKSPACE for Python 3.13 and 3.14
         run: |
           python3 -c "
-          import re
+          import re, shutil, os
+
+          # Copy the lock files in the root package to separate filenames
+          shutil.copyfile('requirements_lock_3_12.txt', 'requirements_lock_3_13.txt')
+          shutil.copyfile('requirements_lock_3_12.txt', 'requirements_lock_3_14.txt')
+          print('Successfully copied requirements lock files for Python 3.13 and 3.14 at root.')
+
+          # Also check and copy in third_party if present
+          if os.path.exists('third_party/requirements_lock_3_12.txt'):
+              shutil.copyfile('third_party/requirements_lock_3_12.txt', 'third_party/requirements_lock_3_13.txt')
+              shutil.copyfile('third_party/requirements_lock_3_12.txt', 'third_party/requirements_lock_3_14.txt')
+              print('Successfully copied requirements lock files for Python 3.13 and 3.14 in third_party.')
+
+          # Patch third_party/BUILD if it exists to export the new files
+          if os.path.exists('third_party/BUILD'):
+              with open('third_party/BUILD', 'r') as f:
+                  tp_content = f.read()
+              tp_pattern = r'(\"requirements_lock_3_12\.txt\",?)'
+              tp_replacement = r'\1\n    \"requirements_lock_3_13.txt\",\n    \"requirements_lock_3_14.txt\",'
+              tp_content, tp_count = re.subn(tp_pattern, tp_replacement, tp_content)
+              if tp_count > 0:
+                  with open('third_party/BUILD', 'w') as f:
+                      f.write(tp_content)
+                  print('Successfully patched third_party/BUILD exports.')
 
           with open('WORKSPACE', 'r') as f:
               content = f.read()
 
+          # Map 3.13 and 3.14 to their respective distinct lock files
           pattern = r'(\"3\.12\":\s*\"//:requirements_lock_3_12\.txt\",?)'
-          replacement = r'\1\n        \"3.13\": \"//:requirements_lock_3_12.txt\",\n        \"3.14\": \"//:requirements_lock_3_12.txt\",'
+          replacement = r'\1\n        \"3.13\": \"//:requirements_lock_3_13.txt\",\n        \"3.14\": \"//:requirements_lock_3_14.txt\",'
 
           content, count = re.subn(pattern, replacement, content)
           if count > 0:
