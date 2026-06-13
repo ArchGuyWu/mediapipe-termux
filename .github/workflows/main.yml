@@ -142,9 +142,9 @@ jobs:
               code = f.read()
 
           # Replace default bazel build flags in setup.py to cross-compile for Android arm64
-          # Specifically targeting: --config=android_arm64 and disabling desktop GPU/GUI
+          # Specifically targeting: --config=android_arm64 and enabling GPU support
           pattern = r\"'bazel',\s*'build',\s*'-c',\s*'opt'\"
-          replacement = \"'bazel', 'build', '-c', 'opt', '--config=android_arm64', '--cpu=arm64-v8a', '--copt=-D__ANDROID_API__=24', '--linkopt=-landroid', '--linkopt=-llog'\"
+          replacement = \"'bazel', 'build', '-c', 'opt', '--config=android_arm64', '--cpu=arm64-v8a', '--copt=-D__ANDROID_API__=24', '--linkopt=-landroid', '--linkopt=-llog', '--linkopt=-lEGL', '--linkopt=-lGLESv2', '--linkopt=-lGLESv3', '--linkopt=-lvulkan'\"
 
           patched = re.sub(pattern, replacement, code)
 
@@ -152,9 +152,9 @@ jobs:
           plat_pattern = r\"class BuildPy\(build_py\):\"
           plat_replacement = \"\"\"class BuildPy(build_py):
             def run(self):
-              # Inject Android CPU configuration before building
+              # Inject Android GPU configuration before building
               import os
-              os.environ['MEDIAPIPE_DISABLE_GPU'] = '1'
+              os.environ['MEDIAPIPE_DISABLE_GPU'] = '0'
               super().run()\"\"\"
 
           patched = patched.replace('class BuildPy(build_py):', plat_replacement)
@@ -211,14 +211,14 @@ jobs:
           # Android configuration injected by GHA builder
           android_ndk_repository(
               name = "androidndk",
-              path = \"${{ steps.setup-ndk.outputs.ndk-path }}\",
+              path = "${{ steps.setup-ndk.outputs.ndk-path }}",
               api_level = 24,
           )
 
           android_sdk_repository(
               name = "androidsdk",
               api_level = 30,
-              build_tools_version = \"30.0.3\",
+              build_tools_version = "30.0.3",
           )
           EOF
 
