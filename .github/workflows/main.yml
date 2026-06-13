@@ -334,6 +334,17 @@ jobs:
           build:android_arm64 --linkopt=-lGLESv2
           build:android_arm64 --linkopt=-lGLESv3
           build:android_arm64 --linkopt=-lvulkan
+
+          # Force C++20 on all target C++ source files (overrides toolchain/target default C++17)
+          build:android_arm64 --per_file_copt=.*\.cc\$@-std=c++20
+          build:android_arm64 --per_file_copt=.*\.cpp\$@-std=c++20
+          build:android_arm64 --per_file_copt=.*\.cxx\$@-std=c++20
+
+          # Resource limits to prevent Out-Of-Memory (OOM) on GHA runners
+          # Overrides default 'build --jobs 128' from MediaPipe bazelrc
+          build --jobs=2
+          build --local_ram_resources=6000
+          build --local_cpu_resources=2
           EOF
 
       # Step 10: Run setup.py bdist_wheel with custom android platform tag
