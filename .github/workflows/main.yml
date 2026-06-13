@@ -173,6 +173,34 @@ jobs:
           print(f'Successfully patched setup.py for Android arm64 cross-compilation and resolved versioning issue with version: {version}')
           "
 
+      # Step 8.5: Patch mediapipe/python/BUILD to link against OpenCV on Android
+      - name: Patch MediaPipe Python BUILD for Android OpenCV
+        run: |
+          python3 -c "
+          with open('mediapipe/python/BUILD', 'r') as f:
+              content = f.read()
+
+          # Add //third_party:opencv to deps of _framework_bindings pybind_extension
+          old_deps = '    deps = [\n        \":builtin_calculators\",'
+          new_deps = '    deps = [\n        \"//third_party:opencv\",\n        \":builtin_calculators\",'
+          content = content.replace(old_deps, new_deps)
+
+          # Modify linkopts select to exclude desktop opencv libs on Android arm64/arm/x86/x86_64
+          old_linkopts = '    linkopts = select({\n        \"//third_party:opencv_source_build\": [],\n        \"//conditions:default\": ['
+          new_linkopts = '''    linkopts = select({
+              \"//third_party:opencv_source_build\": [],
+              \"//mediapipe:android_arm64\": [],
+              \"//mediapipe:android_arm\": [],
+              \"//mediapipe:android_x86\": [],
+              \"//mediapipe:android_x86_64\": [],
+              \"//conditions:default\": ['''
+          content = content.replace(old_linkopts, new_linkopts)
+
+          with open('mediapipe/python/BUILD', 'w') as f:
+              f.write(content)
+          print('Successfully patched mediapipe/python/BUILD for Android OpenCV linkage.')
+          "
+
       # Step 9: Configure WORKSPACE to link against Android NDK and SDK
       - name: Configure Android SDK and NDK in WORKSPACE
         run: |
